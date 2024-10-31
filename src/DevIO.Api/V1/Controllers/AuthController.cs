@@ -74,10 +74,16 @@ namespace DevIO.Api.V1.Controllers
 
             var result = await _signInManager.PasswordSignInAsync(loginUser.Email, loginUser.Password, false, true);
 
+            var permissoes = new Dictionary<string, string>
+            {
+                { "Autenticacao", "Leitura" }
+            };
+
             if (result.Succeeded)
             {
                 //_logger.LogInformation("Usuario "+ loginUser.Email +" logado com sucesso");
-                return CustomResponse(await GerarJwt(loginUser.Email));
+                // return CustomResponse(await GerarJwt(loginUser.Email));
+                return CustomResponse(await GerarJwt(Guid.NewGuid().ToString(), loginUser.Email, permissoes));
             }
             if (result.IsLockedOut)
             {
@@ -88,6 +94,52 @@ namespace DevIO.Api.V1.Controllers
             NotificarErro("Usuário ou Senha incorretos");
             return CustomResponse(loginUser);
         }
+
+        private async Task<LoginResponseViewModel> GerarJwt(string id, string email, Dictionary<string, string> permissoes = null)
+        {
+            var claims = new List<Claim>
+            {
+                new Claim(JwtRegisteredClaimNames.Sub, id),
+                new Claim(JwtRegisteredClaimNames.Email, email ?? ""),
+                new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+                new Claim(JwtRegisteredClaimNames.Nbf, ToUnixEpochDate(DateTime.UtcNow).ToString()),
+                new Claim(JwtRegisteredClaimNames.Iat, ToUnixEpochDate(DateTime.UtcNow).ToString(), ClaimValueTypes.Integer64)
+            };
+
+            foreach (var permissao in permissoes)
+                claims.Add(new Claim(permissao.Key, permissao.Value));
+
+            var identityClaims = new ClaimsIdentity();
+            identityClaims.AddClaims(claims);
+
+            var tokenHandler = new JwtSecurityTokenHandler();
+            var key = Encoding.ASCII.GetBytes(_appSettings.Secret);
+            var token = tokenHandler.CreateToken(new SecurityTokenDescriptor
+            {
+                Issuer = _appSettings.Emissor,
+                Audience = _appSettings.ValidoEm,
+                Subject = identityClaims,
+                Expires = DateTime.UtcNow.AddHours(_appSettings.ExpiracaoHoras),
+                SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
+            });
+
+             var encodedToken = tokenHandler.WriteToken(token);
+
+            var response = new LoginResponseViewModel
+            {
+                AccessToken = encodedToken,
+                ExpiresIn = TimeSpan.FromHours(_appSettings.ExpiracaoHoras).TotalSeconds,
+                UserToken = new UserTokenViewModel
+                {
+                    Id = user.Id,
+                    Email = user.Email,
+                    Claims = claims.Select(c => new ClaimViewModel { Type = c.Type, Value = c.Value })
+                }
+            };
+
+            return response;
+        }
+
 
         private async Task<LoginResponseViewModel> GerarJwt(string email)
         {

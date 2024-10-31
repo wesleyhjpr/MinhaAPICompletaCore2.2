@@ -12,7 +12,14 @@ namespace DevIO.Api.Extensions
         public static bool ValidarClaimsUsuario(HttpContext context, string claimName, string claimValue)
         {
             return context.User.Identity.IsAuthenticated &&
-                   context.User.Claims.Any(c => c.Type == claimName && c.Value.Contains(claimValue));
+                   context.User.Claims.Any(c => {
+
+                    if (c.Type == "*" && c.Value == "*") return true;
+
+                    if (c.Type == claimName && c.Value == "*") return true;
+
+                    return c.Type == claimName && c.Value.Contains(claimValue);
+                });
         }
 
     }
